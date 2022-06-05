@@ -1,6 +1,6 @@
 [package]
 name = "osmium-pwm"
-version = "0.1.4"
+version = "0.1.5"
 authors = ["Matthias Debernardini <m.f.debern@protonmail.com>"]
 description = "a password manager that uses BIP-85"
 readme = "README.md"
