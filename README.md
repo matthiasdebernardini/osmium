@@ -12,7 +12,7 @@ This uses [BIP-85](https://github.com/bitcoin/bips/blob/master/bip-0085.mediawik
 
 When you run this program, it will emit logs in the directory it was ran in. These logs have all the internal data.
 
-As mentioned during init, you have to backup the seed to (ideally) paper or some robust method or storage. Without this seed, you can not recover the passwords.
+As mentioned during init, you have to backup the seed (ideally) to paper or some robust method or storage. Without this seed, you can not recover the passwords.
 
 # Usage 
 

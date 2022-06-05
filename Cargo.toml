@@ -6,6 +6,8 @@ description = "a password manager that uses BIP-85"
 readme = "README.md"
 license = "MIT"
 edition = "2021"
+repository = "https://github.com/matthiasdebernardini/osmium"
+
 
 [dependencies]
 bitcoin = "0.28.1"
