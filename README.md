@@ -17,6 +17,7 @@ As mentioned during init, you have to backup the seed to (ideally) paper or some
 # Usage 
 
 `$ osmium-pwm --init true --new # to get a new seed`
+
 `$ osmium-pwm --init --new "1 github" # to make a new password`
 
 Keep a table of the key-value pair that the `new` command uses to track your passwords.
