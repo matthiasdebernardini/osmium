@@ -1,5 +1,5 @@
 [package]
-name = "osmium"
+name = "osmium-pwm"
 version = "0.1.0"
 authors = ["Matthias Debernardini <m.f.debern@protonmail.com>"]
 description = "a password manager that uses BIP-85"
