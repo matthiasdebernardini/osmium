@@ -1,9 +1,8 @@
-
 [package]
 name = "osmium"
 version = "0.1.0"
 authors = ["Matthias Debernardini <m.f.debern@protonmail.com>"]
-description = "BIP-85 - deterministic entropy from bip32 keychains"
+description = "a password manager that uses BIP-85"
 readme = "README.md"
 license = "MIT"
 edition = "2021"
