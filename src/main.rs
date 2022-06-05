@@ -5,7 +5,7 @@ use bip39::*;
 use bip85::*;
 use chrono::offset::Utc;
 use clap::{arg, Command};
-use fern::{log_file, Dispatch};
+use fern::{Dispatch};
 use log::*;
 use rand::{distributions::Standard, *};
 use std::{
@@ -22,8 +22,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     let path = format!("{home_env}/.config/osmium");
     let matches = Command::new("osmium")
-        .version("0.1.0")
-        .author("Matthias Debernardini <>")
+        .version("0.1.5")
+        .author("Matthias Debernardini <m.f.debern@protonmail.com>")
         .arg(arg!(--init <BOOL> "path to load configuration file").default_missing_value("false"))
         .arg(arg!(--new <INDEX_NAME> "like '0 titter' but with a space").default_missing_value(""))
         .get_matches();
@@ -106,6 +106,6 @@ fn init_log() -> Result<(), Box<dyn Error>> {
         })
         .level(LevelFilter::Debug)
         .chain(io::stderr())
-        .chain(log_file(format!("output_{}.log", Utc::now().timestamp()))?)
+        // .chain(log_file(format!("output_{}.log", Utc::now().timestamp()))?)
         .apply()?)
 }

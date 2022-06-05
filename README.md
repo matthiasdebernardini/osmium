@@ -4,7 +4,7 @@ Osmium creates a string (thats easy to backup) and derives all your passwords fr
 
 # Security
 
-This app runs but its probably best to use BitWarden or 1Password as a password manager at the moment.
+This app runs (and is overengineered) but its probably best to use BitWarden or 1Password as a password manager at the moment.
 
 Currently there is no encryption, but you can use any encryption tool to encrypt the mnemonic seed which is stored at `$HOME/.config/osmium/mnemonic.backup` in plaintext.
 
