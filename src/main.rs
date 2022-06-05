@@ -1,25 +1,20 @@
 use crate::bitcoin::secp256k1::Secp256k1;
 use crate::bitcoin::util::bip32::ExtendedPrivKey;
 use anyhow::Result;
+use bip39::*;
 use bip85::*;
 use chrono::offset::Utc;
 use clap::{arg, Command};
 use fern::{log_file, Dispatch};
 use log::*;
+use rand::{distributions::Standard, *};
 use std::{
     env,
     error::Error,
     fs::{self, File},
     io::{self, BufWriter, Write},
 };
-use bip39::*;
-use rand::{distributions::Standard, *}; 
 
-// osmium --init
-// osmium --new 1 github
-// osmium --list
-// osmium --restore "hello erer" "/path/to/table"
-// osmium --get
 fn main() -> Result<(), Box<dyn Error>> {
     let home_env = match env::var("HOME") {
         Ok(val) => val,
@@ -33,8 +28,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         .arg(arg!(--new <INDEX_NAME> "like '0 titter' but with a space").default_missing_value(""))
         .get_matches();
     init_log()?;
-
-    // let config = matches.value_of("conf").expect("Could not get init option");
     let new = matches.value_of("new").expect("Could not get new option");
     let mut make_new: bool = false;
     if make_new {}
@@ -62,7 +55,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .expect("Could not get true or false");
     if init_app {
         let seed: Vec<u8> = rand::thread_rng().sample_iter(&Standard).take(32).collect();
-        let mnemonic = bip39::Mnemonic::from_entropy(seed.as_ref())
+        let mnemonic = bip39::Mnemonic:: from_entropy(seed.as_ref())
             .expect("Could not make mnemonic")
             .to_string();
         info!("the following data needs to be backed up to paper with pencil");
@@ -100,20 +93,6 @@ fn get_new_password(
     Ok(xprv)
 }
 
-fn _encrypt_db() -> Result<(), Box<dyn Error>> {
-    unimplemented!()
-}
-
-fn _get_passphrase() -> Result<(), Box<dyn Error>> {
-    unimplemented!()
-}
-// fn get_config(config: &str) -> Result<Config, Box<dyn Error>> {
-//     Ok(Config::builder()
-//         .add_source(config::File::with_name(config))
-//         .add_source(Environment::with_prefix("APP"))
-//         .build()?)
-// }
-
 fn init_log() -> Result<(), Box<dyn Error>> {
     Ok(Dispatch::new()
         .format(|out, message, record| {
@@ -130,26 +109,3 @@ fn init_log() -> Result<(), Box<dyn Error>> {
         .chain(log_file(format!("output_{}.log", Utc::now().timestamp()))?)
         .apply()?)
 }
-
-// fn encrypt(holdings: Vec<Holding>, config: Config) -> Result<Vec<Holding>, Box<dyn Error>> {
-//     info!("Creating Encrypted database");
-//     let pretty = PrettyConfig::new()
-//         .depth_limit(2)
-//         .separate_tuple_members(true)
-//         .enumerate_arrays(true);
-//     let mut recipients: Vec<Box<dyn age::Recipient + 'static>> = Vec::new();
-//     for (_, pubkey) in config.try_deserialize::<HashMap<String, String>>()? {
-//         let pubkey = Recipient::from_str(&pubkey)?;
-//         recipients.push(Box::new(pubkey));
-//     }
-//     let plaintext = to_string_pretty(&holdings, pretty).expect("Serialization failed");
-//     let encryptor = Encryptor::with_recipients(recipients);
-//     let mut encrypted = vec![];
-//     let mut writer = encryptor.wrap_output(&mut encrypted)?;
-//     writer.write_all(plaintext.as_bytes())?;
-//     writer.finish()?;
-//     let path = format!("encrypted_{}.age", chrono::offset::Utc::now().timestamp());
-//     info!("Encrypting to {}", path);
-//     fs::write(path, encrypted).expect("Unable to write file");
-//     Ok(holdings)
-// }
