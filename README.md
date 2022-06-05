@@ -8,7 +8,7 @@ This app runs but its probably best to use BitWarden or 1Password as a password 
 
 Currently there is no encryption, but you can use any encryption tool to encrypt the mnemonic seed which is stored at `$HOME/.config/osmium/mnemonic.backup` in plaintext.
 
-This uses [https://github.com/bitcoin/bips/blob/master/bip-0085.mediawiki](BIP-85) method of deriving new entropy from existing entropy. BIP85 being [https://coldcard.com/docs/bip85](used in the wild).
+This uses [BIP-85](https://github.com/bitcoin/bips/blob/master/bip-0085.mediawiki) method of deriving new entropy from existing entropy. BIP85 being [used in the wild](https://coldcard.com/docs/bip85).
 
 When you run this program, it will emit logs in the directory it was ran in. These logs have all the internal data.
 
