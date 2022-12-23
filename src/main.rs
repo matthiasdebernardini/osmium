@@ -5,7 +5,7 @@ use bip39::*;
 use bip85::*;
 use chrono::offset::Utc;
 use clap::{arg, Command};
-use fern::{Dispatch};
+use fern::Dispatch;
 use log::*;
 use rand::{distributions::Standard, *};
 use std::{
@@ -55,7 +55,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .expect("Could not get true or false");
     if init_app {
         let seed: Vec<u8> = rand::thread_rng().sample_iter(&Standard).take(32).collect();
-        let mnemonic = bip39::Mnemonic:: from_entropy(seed.as_ref())
+        let mnemonic = bip39::Mnemonic::from_entropy(seed.as_ref())
             .expect("Could not make mnemonic")
             .to_string();
         info!("the following data needs to be backed up to paper with pencil");
