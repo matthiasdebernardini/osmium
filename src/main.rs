@@ -1,6 +1,6 @@
 use crate::bitcoin::secp256k1::Secp256k1;
 use crate::bitcoin::util::bip32::ExtendedPrivKey;
-use anyhow::Result;
+use anyhow::{Result};
 use bip39::*;
 use bip85::*;
 use chrono::offset::Utc;
@@ -13,22 +13,36 @@ use std::{
     error::Error,
     fs::{self, File},
     io::{self, BufWriter, Write},
+    path::Path,
 };
 
+
+
 fn main() -> Result<(), Box<dyn Error>> {
-    let home_env = match env::var("HOME") {
-        Ok(val) => val,
-        Err(_e) => panic!("Unable to get HOME var"),
+    let path = env::var("HOME")?;
+    // TODO: make home dir
+    let path = Path::new(path.as_str());
+
+    if let true = path.is_dir() {
+        let path = path.to_str().expect("Path provided must be valid UTF-8");
+        panic!("{path} already exists")
     };
-    let path = format!("{home_env}/.config/osmium");
-    let matches = Command::new("osmium")
+
+    match fs::create_dir(path) {
+        Ok(_) => (),
+        Err(e) => panic!("Error creating new folder: {e}"),
+    };
+    let _path = path.to_str();
+    let path = format!("/.config/osmium");
+    let _matches = Command::new("osmium")
         .version("0.1.5")
         .author("Matthias Debernardini <m.f.debern@protonmail.com>")
         .arg(arg!(--init <BOOL> "path to load configuration file").default_missing_value("false"))
         .arg(arg!(--new <INDEX_NAME> "like '0 titter' but with a space").default_missing_value(""))
         .get_matches();
     init_log()?;
-    let new = matches.value_of("new").expect("Could not get new option");
+    let new = "".to_owned();
+    // matches. .value_of("new").expect("Could not get new option");
     let mut make_new: bool = false;
     if make_new {}
     let mut name = "";
@@ -48,11 +62,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             .last()
             .expect("Expected a name like 'twitter' but could not get it");
     }
-    let init_app = matches
-        .value_of("init")
-        .expect("Could not get init option")
-        .parse::<bool>()
-        .expect("Could not get true or false");
+    let init_app = true;
+    // matches
+    //     .value_of("init")
+    //     .expect("Could not get init option")
+    //     .parse::<bool>()
+    //     .expect("Could not get true or false");
     if init_app {
         let seed: Vec<u8> = rand::thread_rng().sample_iter(&Standard).take(32).collect();
         let mnemonic = bip39::Mnemonic::from_entropy(seed.as_ref())
