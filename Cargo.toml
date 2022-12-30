@@ -11,18 +11,18 @@ repository = "https://github.com/matthiasdebernardini/osmium"
 
 [dependencies]
 bitcoin = "0.29.2"
-bip39 = { version = "1.0.1", optional = true}
+bip39 = { version = "1.0.1"}
 chrono = "0.4.19"
 clap = { version = "4.0.32", features = ["derive", "cargo"] }
 log = "0.4.0"
 fern = "0.6.1"
 config = { version = "0.13.1", features = ["toml"] }
-bip85 = "0.1.1"
 rand = "0.8.5"
 rand_core = "0.6.3"
 anyhow = "1.0.68"
 thiserror = "1.0.38"
 xdg = "2.4.1"
+nostr = "0.9.0"
 
 [profile.dev]
 opt-level = 0

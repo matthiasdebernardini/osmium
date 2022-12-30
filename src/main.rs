@@ -1,8 +1,8 @@
-use crate::bitcoin::secp256k1::Secp256k1;
-use crate::bitcoin::util::bip32::ExtendedPrivKey;
-use anyhow::{Result};
-use bip39::*;
-use bip85::*;
+use bitcoin::{secp256k1::Secp256k1, XOnlyPublicKey};
+use bitcoin::util::bip32::ExtendedPrivKey;
+use anyhow::Result;
+use bip39::{self, Mnemonic};
+// use bip85::*;
 use chrono::offset::Utc;
 use clap::{arg, Command};
 use fern::Dispatch;
@@ -13,29 +13,16 @@ use std::{
     error::Error,
     fs::{self, File},
     io::{self, BufWriter, Write},
-    path::Path,
+    path::{Path, PathBuf}, borrow::Cow,
 };
-
-
-
+use std::str::FromStr;
+use xdg::BaseDirectories;
+use nostr::{ Keys };
+mod bip85;
 fn main() -> Result<(), Box<dyn Error>> {
-    let path = env::var("HOME")?;
-    // TODO: make home dir
-    let path = Path::new(path.as_str());
-
-    if let true = path.is_dir() {
-        let path = path.to_str().expect("Path provided must be valid UTF-8");
-        panic!("{path} already exists")
-    };
-
-    match fs::create_dir(path) {
-        Ok(_) => (),
-        Err(e) => panic!("Error creating new folder: {e}"),
-    };
-    let _path = path.to_str();
-    let path = format!("/.config/osmium");
+    let u = User::new();
     let _matches = Command::new("osmium")
-        .version("0.1.5")
+        .version("0.0.1")
         .author("Matthias Debernardini <m.f.debern@protonmail.com>")
         .arg(arg!(--init <BOOL> "path to load configuration file").default_missing_value("false"))
         .arg(arg!(--new <INDEX_NAME> "like '0 titter' but with a space").default_missing_value(""))
@@ -88,7 +75,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let path = format!("{path}/mnemonic.backup");
         let contents = fs::read_to_string(path)
             .expect("Something went wrong when reading the mnemonic backup");
-        let seed = bip39::Mnemonic::parse_in_normalized(Language::English, contents.as_str())?
+        let seed = bip39::Mnemonic::parse_in_normalized(bip39::Language::English, contents.as_str())?
             .to_entropy();
         let root = ExtendedPrivKey::new_master(network, &seed)?;
         info!("Root key: {}", root);
@@ -104,7 +91,7 @@ fn get_new_password(
     index: usize,
 ) -> Result<ExtendedPrivKey, Box<dyn Error>> {
     let secp = Secp256k1::new();
-    let xprv = to_xprv(&secp, &root, index as u32).expect("Could not derive ExtendedPrivKey");
+    let xprv = bip85::to_xprv(&secp, &root, index as u32).expect("Could not derive ExtendedPrivKey");
     Ok(xprv)
 }
 
@@ -124,3 +111,99 @@ fn init_log() -> Result<(), Box<dyn Error>> {
         // .chain(log_file(format!("output_{}.log", Utc::now().timestamp()))?)
         .apply()?)
 }
+
+struct User {
+    config: PathBuf,
+    registered: bool,
+    mnemonic: Mnemonic,
+    pubkey: XOnlyPublicKey,
+}
+
+trait New {
+    /// .
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if .
+    fn configure() -> Result<PathBuf, Box<dyn Error>>;
+    fn get_pubkey(mnemonic: &Mnemonic) -> XOnlyPublicKey;
+    fn make_seed() -> String;
+    fn new() -> Self;
+    fn register(&self) -> bool;
+}
+
+impl New for User {
+    fn configure() -> Result<PathBuf, Box<dyn Error>> {
+        let xdg_dirs = BaseDirectories::with_prefix("osmium")?;
+        Ok(xdg_dirs.place_config_file("config.toml")?)
+    }
+
+    fn make_seed() -> String {
+        let seed: Vec<u8> = rand::thread_rng().sample_iter(&Standard).take(32).collect();
+        bip39::Mnemonic::from_entropy(seed.as_ref())
+            .expect("Could not make mnemonic")
+            .to_string()
+    }
+
+    fn register(&self) -> bool {
+        todo!()
+    }
+
+    fn get_pubkey(mnemonic: &Mnemonic) -> XOnlyPublicKey {
+        let root_key = bitcoin::util::bip32::ExtendedPrivKey::new_master(bitcoin::Network::Bitcoin, &mnemonic.to_entropy_array().0).unwrap();
+        let path = bitcoin::util::bip32::DerivationPath::from_str("m/44'/1237'/0'/0/0").unwrap();
+        let secp = bitcoin::secp256k1::Secp256k1::new();
+        let child_xprv = root_key.derive_priv(&secp, &path).unwrap();
+        // let secret_key = Keys::try_from(child_xprv.private_key).unwrap();
+        let keys = Keys::new(child_xprv.private_key.into());
+        keys.public_key()
+    }
+
+    fn new() -> Self {
+        let config = User::configure().expect("can not make config for new user");
+        let seed = User::make_seed();
+        let mnemonic = bip39::Mnemonic::parse_in_normalized(bip39::Language::English, seed.as_str())
+            .expect("cannot make mnemonic").to_string();
+        // let passphrase= Some("".to_string());
+        // .to_entropy();
+        let mnemonic: Mnemonic = bip39::Mnemonic::from_str(&mnemonic).unwrap();
+        // let seed  = mnemonic.to_entropy();
+        // //  .to_seed(passphrase.map(|p| p.into()).unwrap_or_default());
+        // let root_key = bitcoin::util::bip32::ExtendedPrivKey::new_master(bitcoin::Network::Bitcoin, &mnemonic.to_entropy_array().0).unwrap();
+        // let path = bitcoin::util::bip32::DerivationPath::from_str("m/44'/1237'/0'/0/0").unwrap();
+        // let secp = bitcoin::secp256k1::Secp256k1::new();
+        // let child_xprv = root_key.derive_priv(&secp, &path).unwrap();
+        // // let secret_key = Keys::try_from(child_xprv.private_key).unwrap();
+        // let keys = Keys::new(child_xprv.private_key.into());
+        // let pubkey = keys.public_key();
+        let pubkey = User::get_pubkey(&mnemonic);
+
+        User {
+            config,
+            registered: true,
+            mnemonic,
+            pubkey,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use anyhow::Ok;
+
+    // Note this useful idiom: importing names from outer (for mod tests) scope.
+    use super::*;
+
+    #[test]
+    fn test_add() {
+        let user = User::new();
+        assert_eq!(User::make_seed(), "");
+    }
+    #[test]
+    fn configure() {
+        let user = User::new();
+        User::configure();
+        panic!()
+    }
+}
+
