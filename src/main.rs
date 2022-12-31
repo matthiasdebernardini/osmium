@@ -63,7 +63,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         info!("the following data needs to be backed up to paper with pencil");
         info!("without this data, it is impossible to recover your passwords");
         info!("{mnemonic:?}");
-        let path = format!("{path}/mnemonic.backup");
+        let path = format!("/mnemonic.backup");
         let f = File::create(path).expect("Unable to create file");
         let mut f = BufWriter::new(f);
         f.write_all(mnemonic.as_bytes())
@@ -72,7 +72,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if make_new {
         // avoids accidentaly using these keys in wallet software
         let network = bitcoin::Network::Regtest;
-        let path = format!("{path}/mnemonic.backup");
+        let path = format!("/mnemonic.backup");
         let contents = fs::read_to_string(path)
             .expect("Something went wrong when reading the mnemonic backup");
         let seed = bip39::Mnemonic::parse_in_normalized(bip39::Language::English, contents.as_str())?
