@@ -1,63 +1,172 @@
-use bitcoin::{secp256k1::Secp256k1, XOnlyPublicKey};
-use bitcoin::util::bip32::ExtendedPrivKey;
-use anyhow::Result;
+#![allow(unused)]
 use bip39::{self, Mnemonic};
+use bitcoin::util::bip32::ExtendedPrivKey;
+use bitcoin::{secp256k1::Secp256k1, XOnlyPublicKey};
 use chrono::format::format;
-// use bip85::*;
 use chrono::offset::Utc;
 use clap::{arg, Command};
 use fern::Dispatch;
 use log::*;
+use nostr::Keys;
 use rand::{distributions::Standard, *};
+use std::str::FromStr;
 use std::{
+    borrow::Cow,
     env,
     error::Error,
     fs::{self, File},
-    io::{self, BufWriter, Write},
-    path::{Path, PathBuf}, borrow::Cow,
+    io::{self, BufWriter, Read, Write},
+    path::{Path, PathBuf},
 };
-use std::str::FromStr;
 use xdg::BaseDirectories;
-use nostr::{ Keys };
 mod bip85;
 use clap::Parser;
-#[allow(unreachable_code)]
+use read_input::prelude::*;
+use age::secrecy::Secret;
 
-#[derive(Parser)] // requires `derive` feature
-#[command(author = "Matthias Debernardini <m.f.debern@protonmail.com>", version = "0.0.1", about = "CLI for the Osmium password manager service")]
+#[derive(Parser)]
+#[command(
+    author = "Matthias Debernardini <m.f.debern@protonmail.com>",
+    version = "0.0.1",
+    about = "CLI for the Osmium password manager service"
+)]
 struct Cli {
-    #[arg(short = 'i')]
+    #[arg(short = 'i', exclusive = true)]
     init: Option<bool>,
-    #[arg(short = 'n')]
+    #[arg(short = 'n', exclusive = true)]
     new: Option<String>,
+    #[arg(short = 'r', exclusive = true)]
     recover: Option<PathBuf>,
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn handle_user(s: Option<String>, decryption_password: String) -> Result<(), Box<dyn Error>> {
+    // println!("init user");
+    // let base_dirs = BaseDirectories::new().expect("Need to initalize base dirs");
+    // let home = base_dirs.get_config_home();
+    // let home = home.to_str().expect("Could not convert").to_string();
+    // let data_path = format!("{}/osmium/mnemonic.backup", home);
+    // let config_path = format!("{}/osmium/osmium.toml", home);
+    // let xdg_data = base_dirs.find_data_file(data_path);
+    // let xdg_config = base_dirs.find_config_file(config_path);
+    // println!("{xdg_data:?} {xdg_config:?}");
+    let (xdg_data, xdg_config, _) = get_app_files()?;
 
-    let args = Cli::parse();
-   
+    todo!("decrypt password");
+    let mnemonic = std::fs::read_to_string(xdg_data)
+        .expect("Could not read file to string");
+    let mnemonic: Mnemonic =
+        bip39::Mnemonic::from_str(&mnemonic).expect("Could not convert to mnemonic");
+    let u = User::load_config(mnemonic, xdg_config);
+    if s.is_some() {
+        let new = s.unwrap();
+        let index = new
+            .split_ascii_whitespace()
+            .next()
+            .expect("Invalid")
+            .parse::<usize>()
+            .expect("Expected a number like 1 but could not get it");
+        let name = new
+            .split_ascii_whitespace()
+            .last()
+            .expect("Expected a name like 'twitter' but could not get it");
+        let network = bitcoin::Network::Regtest;
+        let seed = bip39::Mnemonic::parse_in_normalized(
+            bip39::Language::English,
+            u.mnemonic.to_string().as_str(),
+        )?
+        .to_entropy();
+        let root = ExtendedPrivKey::new_master(network, &seed)?;
+        let password = get_new_password(root, index);
+        println!("{:?}", password.unwrap());
+    }
+    todo!("write to data file");
+    Ok(())
+}
+
+fn handle_recovered_user(s: Option<String>) -> Result<User, Box<dyn Error>> {
+    todo!()
+}
+
+fn handle_new_user() -> Result<User, Box<dyn Error>> {
+    Ok(User::new())
+}
+
+fn get_app_files() -> Result<(PathBuf, PathBuf, PathBuf), Box<dyn Error>> {
+    let base_dirs = BaseDirectories::new().expect("need to initalize base dirs");
+    let home = base_dirs.get_config_home();
+    let home = home.to_str().expect("Could not convert").to_string();
+    let mnemonic_path = format!("{}/osmium/mnemonic.backup", home);
+    let config_path = format!("{}/osmium/osmium.toml", home);
+    let password_path = format!("{}/osmium/osmium.passwords", home);
+    let xdg_data = base_dirs.find_data_file(mnemonic_path).ok_or("could not get data")?;
+    let xdg_config = base_dirs.find_config_file(config_path).ok_or("could not get config")?;
+    let xdg_passwords = base_dirs.find_data_file(password_path).ok_or("could not get password")?;
+    Ok((xdg_data, xdg_config, xdg_passwords))
+}
+fn main() -> Result<(), Box<dyn Error>> {
+    let cli = Cli::parse();
+
     init_log()?;
 
-   match (args.init, args.recover) {
-    (None, None) => {
-        let a = BaseDirectories::new().unwrap();
-        let home = a.get_config_home();
-        let home = home.to_str();
-        let home = home.unwrap().to_string();
-        let data_path = format!("{}/osmium/mnemonic.backup", home);
-        let config_path = format!("{}/osmium/osmium.toml", home);
-        let xdg_data = a.find_data_file(data_path);
-        let xdg_config = a.find_config_file(config_path);
-        println!("basedir {a:?}");
-        println!("xdg_data {xdg_data:?}");
-        println!("xdg_config {xdg_config:?}");
-        todo!("check if path to config exists, then check for args.new");
-    },
-    (None, Some(p)) => todo!("check path for seed, warn user about putting seed in file then providing path to file, then ask for registration"),
-    (Some(_), None) => todo!("initialize new user, then ask for registration"),
-    (Some(_), Some(_)) => todo!("return error, can't be both"),
-  };
+    match (cli.init, cli.recover) {
+        (None, None) => {
+            println!("Decrypt your data");
+            let decryption_password = input::<String>().get();
+            handle_user(cli.new, decryption_password);
+            todo!("check if path to config exists, then check for args.new");
+        }
+        (None, Some(p)) => {
+            handle_recovered_user(None);
+            todo!(
+                "check path for seed, 
+                warn user about putting seed in file then providing path to file, 
+                then ask for registration if registered already then fetch API"
+            )
+        }
+        (Some(_), None) => {
+            let u = handle_new_user()?;
+            println!("Add an encryption password, so that if you device is compromised, an attacker won't be able to steal your data");
+            let passphrase = input::<String>().get();
+
+            let encrypted_data = {
+                let plaintext = "st".as_bytes();
+                let encryptor = age::Encryptor::with_user_passphrase(Secret::new(passphrase.to_owned()));
+            
+                let mut encrypted = vec![];
+                let mut writer = encryptor.wrap_output(&mut encrypted)?;
+                writer.write_all(plaintext)?;
+                writer.finish()?;
+            
+                encrypted
+            }; 
+            let encrypted_config = {
+                let plaintext = "st".as_bytes();
+                let encryptor = age::Encryptor::with_user_passphrase(Secret::new(passphrase.to_owned()));
+            
+                let mut encrypted = vec![];
+                let mut writer = encryptor.wrap_output(&mut encrypted)?;
+                writer.write_all(plaintext)?;
+                writer.finish()?;
+            
+                encrypted
+            }; 
+            let encrypted_passwords = {
+                let plaintext = "st".as_bytes();
+                let encryptor = age::Encryptor::with_user_passphrase(Secret::new(passphrase.to_owned()));
+            
+                let mut encrypted = vec![];
+                let mut writer = encryptor.wrap_output(&mut encrypted)?;
+                writer.write_all(plaintext)?;
+                writer.finish()?;
+            
+                encrypted
+            }; 
+            todo!("initialize new user, then ask for registration")
+        }
+        (_, _) => {
+            unreachable!("clap crate should prevent this executing this arm by making the arguments exclusive")
+        }
+    };
     // matches. .value_of("new").expect("Could not get new option");
     // let mut make_new: bool = false;
     // if make_new {}
@@ -120,7 +229,8 @@ fn get_new_password(
     index: usize,
 ) -> Result<ExtendedPrivKey, Box<dyn Error>> {
     let secp = Secp256k1::new();
-    let xprv = bip85::to_xprv(&secp, &root, index as u32).expect("Could not derive ExtendedPrivKey");
+    let xprv =
+        bip85::to_xprv(&secp, &root, index as u32).expect("Could not derive ExtendedPrivKey");
     Ok(xprv)
 }
 
@@ -161,11 +271,14 @@ trait New {
     fn make_seed() -> String;
     fn new() -> Self;
     fn register(&self) -> bool;
+    fn load_config(mnemonic: Mnemonic, path: PathBuf) -> Self;
 }
 
 impl New for User {
     fn configure() -> Result<PathBuf, Box<dyn Error>> {
         let xdg_dirs = BaseDirectories::with_prefix("osmium")?;
+        todo!("make sure its encrypted");
+        todo!("https://kerkour.com/rust-file-encryption");
         Ok(xdg_dirs.place_config_file("config.toml")?)
     }
 
@@ -181,7 +294,11 @@ impl New for User {
     }
 
     fn get_pubkey(mnemonic: &Mnemonic) -> XOnlyPublicKey {
-        let root_key = bitcoin::util::bip32::ExtendedPrivKey::new_master(bitcoin::Network::Bitcoin, &mnemonic.to_entropy_array().0).unwrap();
+        let root_key = bitcoin::util::bip32::ExtendedPrivKey::new_master(
+            bitcoin::Network::Bitcoin,
+            &mnemonic.to_entropy_array().0,
+        )
+        .unwrap();
         let path = bitcoin::util::bip32::DerivationPath::from_str("m/44'/1237'/0'/0/0").unwrap();
         let secp = bitcoin::secp256k1::Secp256k1::new();
         let child_xprv = root_key.derive_priv(&secp, &path).unwrap();
@@ -193,8 +310,10 @@ impl New for User {
     fn new() -> Self {
         let config = User::configure().expect("can not make config for new user");
         let seed = User::make_seed();
-        let mnemonic = bip39::Mnemonic::parse_in_normalized(bip39::Language::English, seed.as_str())
-            .expect("cannot make mnemonic").to_string();
+        let mnemonic =
+            bip39::Mnemonic::parse_in_normalized(bip39::Language::English, seed.as_str())
+                .expect("cannot make mnemonic")
+                .to_string();
         // let passphrase= Some("".to_string());
         // .to_entropy();
         let mnemonic: Mnemonic = bip39::Mnemonic::from_str(&mnemonic).unwrap();
@@ -220,6 +339,16 @@ impl New for User {
     fn recover() -> Self {
         todo!()
     }
+
+    fn load_config(mnemonic: Mnemonic, config: PathBuf) -> Self {
+        let pubkey = User::get_pubkey(&mnemonic);
+        User {
+            config,
+            registered: false,
+            mnemonic,
+            pubkey,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -241,4 +370,3 @@ mod tests {
         panic!()
     }
 }
-
