@@ -22,10 +22,10 @@ rand_core = "0.6.3"
 anyhow = "1.0.68"
 thiserror = "1.0.38"
 xdg = "2.4.1"
-nostr = "0.10.0"
-read_input = "0.8.6"
+nostr = "0.11.0"
 age = "0.9.0"
-
+rpassword = "7.2.0"
+zeroize = "1.5.7"
 [profile.dev]
 opt-level = 0
 [profile.release]

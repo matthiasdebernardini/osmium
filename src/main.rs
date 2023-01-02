@@ -9,6 +9,7 @@ use fern::Dispatch;
 use log::*;
 use nostr::Keys;
 use rand::{distributions::Standard, *};
+use std::ops::Deref;
 use std::str::FromStr;
 use std::{
     borrow::Cow,
@@ -20,9 +21,11 @@ use std::{
 };
 use xdg::BaseDirectories;
 mod bip85;
-use clap::Parser;
-use read_input::prelude::*;
 use age::secrecy::Secret;
+use clap::Parser;
+use rpassword::prompt_password;
+use std::fs::OpenOptions;
+use zeroize::Zeroize;
 
 #[derive(Parser)]
 #[command(
@@ -40,30 +43,21 @@ struct Cli {
 }
 
 fn handle_user(s: Option<String>, decryption_password: String) -> Result<(), Box<dyn Error>> {
-    // println!("init user");
-    // let base_dirs = BaseDirectories::new().expect("Need to initalize base dirs");
-    // let home = base_dirs.get_config_home();
-    // let home = home.to_str().expect("Could not convert").to_string();
-    // let data_path = format!("{}/osmium/mnemonic.backup", home);
-    // let config_path = format!("{}/osmium/osmium.toml", home);
-    // let xdg_data = base_dirs.find_data_file(data_path);
-    // let xdg_config = base_dirs.find_config_file(config_path);
-    // println!("{xdg_data:?} {xdg_config:?}");
-    let (xdg_data, xdg_config, _) = get_app_files()?;
+    let app_files = get_app_files()?;
 
     todo!("decrypt password");
-    let mnemonic = std::fs::read_to_string(xdg_data)
-        .expect("Could not read file to string");
+    let mnemonic =
+        std::fs::read_to_string(app_files.app_mnemonic).expect("Could not read file to string");
     let mnemonic: Mnemonic =
         bip39::Mnemonic::from_str(&mnemonic).expect("Could not convert to mnemonic");
-    let u = User::load_config(mnemonic, xdg_config);
+    let u = User::load_config(mnemonic, app_files.app_config);
     if s.is_some() {
         let new = s.unwrap();
         let index = new
             .split_ascii_whitespace()
             .next()
             .expect("Invalid")
-            .parse::<usize>()
+            .parse::<u32>()
             .expect("Expected a number like 1 but could not get it");
         let name = new
             .split_ascii_whitespace()
@@ -79,6 +73,16 @@ fn handle_user(s: Option<String>, decryption_password: String) -> Result<(), Box
         let password = get_new_password(root, index);
         println!("{:?}", password.unwrap());
     }
+    // update data file
+    let mut file = OpenOptions::new()
+        .write(true)
+        .append(true)
+        .open("my-file")
+        .unwrap();
+
+    if let Err(e) = writeln!(file, "A new line!") {
+        eprintln!("Couldn't write to file: {}", e);
+    }
     todo!("write to data file");
     Ok(())
 }
@@ -91,17 +95,38 @@ fn handle_new_user() -> Result<User, Box<dyn Error>> {
     Ok(User::new())
 }
 
-fn get_app_files() -> Result<(PathBuf, PathBuf, PathBuf), Box<dyn Error>> {
+struct AppFiles {
+    app_mnemonic: PathBuf,
+    app_config: PathBuf,
+    app_passwords: PathBuf,
+    app_log: PathBuf,
+}
+
+fn get_app_files() -> Result<AppFiles, Box<dyn Error>> {
     let base_dirs = BaseDirectories::new().expect("need to initalize base dirs");
     let home = base_dirs.get_config_home();
     let home = home.to_str().expect("Could not convert").to_string();
+
     let mnemonic_path = format!("{}/osmium/mnemonic.backup", home);
     let config_path = format!("{}/osmium/osmium.toml", home);
     let password_path = format!("{}/osmium/osmium.passwords", home);
-    let xdg_data = base_dirs.find_data_file(mnemonic_path).ok_or("could not get data")?;
-    let xdg_config = base_dirs.find_config_file(config_path).ok_or("could not get config")?;
-    let xdg_passwords = base_dirs.find_data_file(password_path).ok_or("could not get password")?;
-    Ok((xdg_data, xdg_config, xdg_passwords))
+
+    let app_mnemonic = base_dirs
+        .find_data_file(mnemonic_path)
+        .ok_or("could not get data")?;
+    let app_config = base_dirs
+        .find_config_file(config_path)
+        .ok_or("could not get config")?;
+    let app_passwords = base_dirs
+        .find_data_file(password_path)
+        .ok_or("could not get password")?;
+
+    Ok(AppFiles {
+        app_mnemonic,
+        app_config,
+        app_passwords,
+        app_log: PathBuf::default(),
+    })
 }
 fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
@@ -111,7 +136,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     match (cli.init, cli.recover) {
         (None, None) => {
             println!("Decrypt your data");
-            let decryption_password = input::<String>().get();
+            let decryption_password =
+                prompt_password("Your decryption password: ").expect("could not get password");
+
             handle_user(cli.new, decryption_password);
             todo!("check if path to config exists, then check for args.new");
         }
@@ -125,42 +152,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         (Some(_), None) => {
             let u = handle_new_user()?;
-            println!("Add an encryption password, so that if you device is compromised, an attacker won't be able to steal your data");
-            let passphrase = input::<String>().get();
-
-            let encrypted_data = {
-                let plaintext = "st".as_bytes();
-                let encryptor = age::Encryptor::with_user_passphrase(Secret::new(passphrase.to_owned()));
-            
-                let mut encrypted = vec![];
-                let mut writer = encryptor.wrap_output(&mut encrypted)?;
-                writer.write_all(plaintext)?;
-                writer.finish()?;
-            
-                encrypted
-            }; 
-            let encrypted_config = {
-                let plaintext = "st".as_bytes();
-                let encryptor = age::Encryptor::with_user_passphrase(Secret::new(passphrase.to_owned()));
-            
-                let mut encrypted = vec![];
-                let mut writer = encryptor.wrap_output(&mut encrypted)?;
-                writer.write_all(plaintext)?;
-                writer.finish()?;
-            
-                encrypted
-            }; 
-            let encrypted_passwords = {
-                let plaintext = "st".as_bytes();
-                let encryptor = age::Encryptor::with_user_passphrase(Secret::new(passphrase.to_owned()));
-            
-                let mut encrypted = vec![];
-                let mut writer = encryptor.wrap_output(&mut encrypted)?;
-                writer.write_all(plaintext)?;
-                writer.finish()?;
-            
-                encrypted
-            }; 
+            let app_files = get_app_files()?;
+            std::fs::write(
+                app_files.app_config,
+                format!("{:?}\n{:?}", u.pubkey, u.registered),
+            );
+            std::fs::write(app_files.app_mnemonic, format!("{:?}", u.mnemonic));
+            println!("Provide an encryption password, so that if you device is compromised, an attacker won't be able to steal your data.");
             todo!("initialize new user, then ask for registration")
         }
         (_, _) => {
@@ -224,10 +222,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn get_new_password(
-    root: ExtendedPrivKey,
-    index: usize,
-) -> Result<ExtendedPrivKey, Box<dyn Error>> {
+fn get_new_password(root: ExtendedPrivKey, index: u32) -> Result<ExtendedPrivKey, Box<dyn Error>> {
     let secp = Secp256k1::new();
     let xprv =
         bip85::to_xprv(&secp, &root, index as u32).expect("Could not derive ExtendedPrivKey");
@@ -259,7 +254,7 @@ struct User {
     pubkey: XOnlyPublicKey,
 }
 
-trait New {
+trait NewInstance {
     /// .
     ///
     /// # Errors
@@ -268,24 +263,25 @@ trait New {
     fn configure() -> Result<PathBuf, Box<dyn Error>>;
     fn recover() -> Self;
     fn get_pubkey(mnemonic: &Mnemonic) -> XOnlyPublicKey;
-    fn make_seed() -> String;
+    fn make_seed(s: &str) -> String;
     fn new() -> Self;
     fn register(&self) -> bool;
     fn load_config(mnemonic: Mnemonic, path: PathBuf) -> Self;
 }
 
-impl New for User {
+impl NewInstance for User {
     fn configure() -> Result<PathBuf, Box<dyn Error>> {
         let xdg_dirs = BaseDirectories::with_prefix("osmium")?;
-        todo!("make sure its encrypted");
-        todo!("https://kerkour.com/rust-file-encryption");
         Ok(xdg_dirs.place_config_file("config.toml")?)
     }
 
-    fn make_seed() -> String {
+    fn make_seed(s: &str) -> String {
         let seed: Vec<u8> = rand::thread_rng().sample_iter(&Standard).take(32).collect();
-        bip39::Mnemonic::from_entropy(seed.as_ref())
+        let entropy = bip39::Mnemonic::from_entropy(seed.as_ref())
             .expect("Could not make mnemonic")
+            .to_seed_normalized(s);
+        bip39::Mnemonic::from_entropy(&entropy)
+            .expect("Could not make mnemonic with passphrase")
             .to_string()
     }
 
@@ -309,7 +305,25 @@ impl New for User {
 
     fn new() -> Self {
         let config = User::configure().expect("can not make config for new user");
-        let seed = User::make_seed();
+        let mut needs_double_checking = true;
+        let mut passphrase = String::new();
+        while needs_double_checking {
+            let once = match rpassword::read_password() {
+                Ok(s) => s,
+                Err(_) => "cannot match second".to_owned(),
+            };
+            let twice = match rpassword::read_password() {
+                Ok(s) => s,
+                Err(_) => "cannot match first".to_owned(),
+            };
+            if once.eq(&twice) {
+                passphrase = once;
+                needs_double_checking = false;
+            }
+        }
+        
+        let seed = User::make_seed(&passphrase);
+        passphrase.zeroize();
         let mnemonic =
             bip39::Mnemonic::parse_in_normalized(bip39::Language::English, seed.as_str())
                 .expect("cannot make mnemonic")
@@ -342,6 +356,7 @@ impl New for User {
 
     fn load_config(mnemonic: Mnemonic, config: PathBuf) -> Self {
         let pubkey = User::get_pubkey(&mnemonic);
+        let config = PathBuf::from(config);
         User {
             config,
             registered: false,
