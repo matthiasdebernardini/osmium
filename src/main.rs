@@ -5,8 +5,9 @@ use bitcoin::{secp256k1::Secp256k1, XOnlyPublicKey};
 use chrono::format::format;
 use chrono::offset::Utc;
 use clap::{arg, Command};
-use fern::Dispatch;
+use fern::{log_file, Dispatch};
 use log::*;
+use nostr::url::quirks::password;
 use nostr::Keys;
 use rand::{distributions::Standard, *};
 use std::ops::Deref;
@@ -23,6 +24,7 @@ use xdg::BaseDirectories;
 mod bip85;
 use age::secrecy::Secret;
 use clap::Parser;
+use nostr::util::nips::nip19::ToBech32;
 use rpassword::prompt_password;
 use std::fs::OpenOptions;
 use zeroize::Zeroize;
@@ -50,7 +52,7 @@ fn handle_user(s: Option<String>, decryption_password: String) -> Result<(), Box
         std::fs::read_to_string(app_files.app_mnemonic).expect("Could not read file to string");
     let mnemonic: Mnemonic =
         bip39::Mnemonic::from_str(&mnemonic).expect("Could not convert to mnemonic");
-    let u = User::load_config(mnemonic, app_files.app_config);
+    let u = User::load_config(mnemonic, app_files.app_config)?;
     if s.is_some() {
         let new = s.unwrap();
         let index = new
@@ -73,7 +75,7 @@ fn handle_user(s: Option<String>, decryption_password: String) -> Result<(), Box
         let password = get_new_password(root, index);
         println!("{:?}", password.unwrap());
     }
-    // update data file
+    // update password data file
     let mut file = OpenOptions::new()
         .write(true)
         .append(true)
@@ -89,10 +91,6 @@ fn handle_user(s: Option<String>, decryption_password: String) -> Result<(), Box
 
 fn handle_recovered_user(s: Option<String>) -> Result<User, Box<dyn Error>> {
     todo!()
-}
-
-fn handle_new_user() -> Result<User, Box<dyn Error>> {
-    Ok(User::new())
 }
 
 struct AppFiles {
@@ -136,10 +134,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     match (cli.init, cli.recover) {
         (None, None) => {
             println!("Decrypt your data");
-            let decryption_password =
-                prompt_password("Your decryption password: ").expect("could not get password");
 
-            handle_user(cli.new, decryption_password);
+            handle_user(cli.new, todo!());
             todo!("check if path to config exists, then check for args.new");
         }
         (None, Some(p)) => {
@@ -151,74 +147,19 @@ fn main() -> Result<(), Box<dyn Error>> {
             )
         }
         (Some(_), None) => {
-            let u = handle_new_user()?;
+            let u = User::new()?;
             let app_files = get_app_files()?;
             std::fs::write(
                 app_files.app_config,
                 format!("{:?}\n{:?}", u.pubkey, u.registered),
             );
             std::fs::write(app_files.app_mnemonic, format!("{:?}", u.mnemonic));
-            println!("Provide an encryption password, so that if you device is compromised, an attacker won't be able to steal your data.");
             todo!("initialize new user, then ask for registration")
         }
         (_, _) => {
             unreachable!("clap crate should prevent this executing this arm by making the arguments exclusive")
         }
     };
-    // matches. .value_of("new").expect("Could not get new option");
-    // let mut make_new: bool = false;
-    // if make_new {}
-    // let mut name = "";
-    // let mut index = 0;
-    // if new.is_empty() {
-    //     make_new = false;
-    // } else {
-    //     make_new = true;
-    //     index = new
-    //         .split_ascii_whitespace()
-    //         .next()
-    //         .expect("Invalid")
-    //         .parse::<usize>()
-    //         .expect("Expected a number like 1 but could not get it");
-    //     name = new
-    //         .split_ascii_whitespace()
-    //         .last()
-    //         .expect("Expected a name like 'twitter' but could not get it");
-    // }
-    // let init_app = true;
-    // // matches
-    // //     .value_of("init")
-    // //     .expect("Could not get init option")
-    // //     .parse::<bool>()
-    // //     .expect("Could not get true or false");
-    // if init_app {
-    //     let seed: Vec<u8> = rand::thread_rng().sample_iter(&Standard).take(32).collect();
-    //     let mnemonic = bip39::Mnemonic::from_entropy(seed.as_ref())
-    //         .expect("Could not make mnemonic")
-    //         .to_string();
-    //     info!("the following data needs to be backed up to paper with pencil");
-    //     info!("without this data, it is impossible to recover your passwords");
-    //     info!("{mnemonic:?}");
-    //     let path = format!("/mnemonic.backup");
-    //     let f = File::create(path).expect("Unable to create file");
-    //     let mut f = BufWriter::new(f);
-    //     f.write_all(mnemonic.as_bytes())
-    //         .expect("Unable to write data");
-    // }
-    // if make_new {
-    //     // avoids accidentaly using these keys in wallet software
-    //     let network = bitcoin::Network::Regtest;
-    //     let path = format!("/mnemonic.backup");
-    //     let contents = fs::read_to_string(path)
-    //         .expect("Something went wrong when reading the mnemonic backup");
-    //     let seed = bip39::Mnemonic::parse_in_normalized(bip39::Language::English, contents.as_str())?
-    //         .to_entropy();
-    //     let root = ExtendedPrivKey::new_master(network, &seed)?;
-    //     info!("Root key: {}", root);
-    //     let new_password = get_new_password(root, index)?;
-    //     info!("new password for {name} with index {index}:");
-    //     info!("{new_password}");
-    // }
     Ok(())
 }
 
@@ -241,8 +182,8 @@ fn init_log() -> Result<(), Box<dyn Error>> {
             ))
         })
         .level(LevelFilter::Debug)
-        .chain(io::stderr())
-        // .chain(log_file(format!("output_{}.log", Utc::now().timestamp()))?)
+        // .chain(io::stderr())
+        .chain(log_file(format!("osmium_{}.log", Utc::now().timestamp()))?)
         .apply()?)
 }
 
@@ -251,7 +192,7 @@ struct User {
     config: PathBuf,
     registered: bool,
     mnemonic: Mnemonic,
-    pubkey: XOnlyPublicKey,
+    pubkey: String,
 }
 
 trait NewInstance {
@@ -262,11 +203,15 @@ trait NewInstance {
     /// This function will return an error if .
     fn configure() -> Result<PathBuf, Box<dyn Error>>;
     fn recover() -> Self;
-    fn get_pubkey(mnemonic: &Mnemonic) -> XOnlyPublicKey;
-    fn make_seed(s: &str) -> String;
-    fn new() -> Self;
+    fn get_pubkey(mnemonic: &Mnemonic) -> Result<String, Box<dyn Error>>;
+    fn make_mnemonic() -> Result<String, Box<dyn Error>>;
+    fn new() -> Result<Self, Box<dyn Error>>
+    where
+        Self: Sized;
     fn register(&self) -> bool;
-    fn load_config(mnemonic: Mnemonic, path: PathBuf) -> Self;
+    fn load_config(mnemonic: Mnemonic, path: PathBuf) -> Result<Self, Box<dyn Error>>
+    where
+        Self: Sized;
 }
 
 impl NewInstance for User {
@@ -275,94 +220,81 @@ impl NewInstance for User {
         Ok(xdg_dirs.place_config_file("config.toml")?)
     }
 
-    fn make_seed(s: &str) -> String {
-        let seed: Vec<u8> = rand::thread_rng().sample_iter(&Standard).take(32).collect();
-        let entropy = bip39::Mnemonic::from_entropy(seed.as_ref())
+    fn make_mnemonic() -> Result<String, Box<dyn Error>> {
+        let entropy: Vec<u8> = rand::thread_rng().sample_iter(&Standard).take(32).collect();
+        let mut needs_double_checking = true;
+        let mut passphrase = String::new();
+        println!("Add a passphrase, so that its impossible for the user to steal your data");
+        while needs_double_checking {
+            let mut once = prompt_password("Input your BIP39 Passphrase, to encrypt your seed")?;
+            let mut twice = prompt_password("Input your passphrase a second time")?;
+            if once.eq(&twice) {
+                passphrase = once.clone();
+                needs_double_checking = false;
+                once.zeroize();
+                twice.zeroize();
+            }
+        }
+        println!("CRITICAL INFO: STORE PASSPHRASE SECURELY");
+        println!("WITHOUT IT - YOUR PASSWORDS ARE GONE");
+        let seed = bip39::Mnemonic::from_entropy(entropy.as_ref())
             .expect("Could not make mnemonic")
-            .to_seed_normalized(s);
-        bip39::Mnemonic::from_entropy(&entropy)
-            .expect("Could not make mnemonic with passphrase")
-            .to_string()
+            .to_seed_normalized(&passphrase)
+            .to_vec();
+        passphrase.zeroize();
+        let seed = std::str::from_utf8(&seed).unwrap();
+        let mnemonic = bip39::Mnemonic::parse_in_normalized(bip39::Language::English, seed)
+            .expect("cannot make mnemonic")
+            .to_string();
+        Ok(mnemonic)
     }
 
     fn register(&self) -> bool {
         todo!()
     }
 
-    fn get_pubkey(mnemonic: &Mnemonic) -> XOnlyPublicKey {
+    fn get_pubkey(mnemonic: &Mnemonic) -> Result<String, Box<dyn Error>> {
         let root_key = bitcoin::util::bip32::ExtendedPrivKey::new_master(
             bitcoin::Network::Bitcoin,
             &mnemonic.to_entropy_array().0,
-        )
-        .unwrap();
-        let path = bitcoin::util::bip32::DerivationPath::from_str("m/44'/1237'/0'/0/0").unwrap();
+        )?;
+        let path = bitcoin::util::bip32::DerivationPath::from_str("m/44'/1237'/0'/0/0")?;
         let secp = bitcoin::secp256k1::Secp256k1::new();
-        let child_xprv = root_key.derive_priv(&secp, &path).unwrap();
+        let child_xprv = root_key.derive_priv(&secp, &path)?;
         // let secret_key = Keys::try_from(child_xprv.private_key).unwrap();
         let keys = Keys::new(child_xprv.private_key.into());
-        keys.public_key()
+        let pubkey = keys.public_key().to_bech32()?;
+        Ok(pubkey)
     }
 
-    fn new() -> Self {
+    fn new() -> Result<Self, Box<dyn Error>> {
         let config = User::configure().expect("can not make config for new user");
-        let mut needs_double_checking = true;
-        let mut passphrase = String::new();
-        while needs_double_checking {
-            let once = match rpassword::read_password() {
-                Ok(s) => s,
-                Err(_) => "cannot match second".to_owned(),
-            };
-            let twice = match rpassword::read_password() {
-                Ok(s) => s,
-                Err(_) => "cannot match first".to_owned(),
-            };
-            if once.eq(&twice) {
-                passphrase = once;
-                needs_double_checking = false;
-            }
-        }
-        
-        let seed = User::make_seed(&passphrase);
-        passphrase.zeroize();
-        let mnemonic =
-            bip39::Mnemonic::parse_in_normalized(bip39::Language::English, seed.as_str())
-                .expect("cannot make mnemonic")
-                .to_string();
-        // let passphrase= Some("".to_string());
-        // .to_entropy();
-        let mnemonic: Mnemonic = bip39::Mnemonic::from_str(&mnemonic).unwrap();
-        // let seed  = mnemonic.to_entropy();
-        // //  .to_seed(passphrase.map(|p| p.into()).unwrap_or_default());
-        // let root_key = bitcoin::util::bip32::ExtendedPrivKey::new_master(bitcoin::Network::Bitcoin, &mnemonic.to_entropy_array().0).unwrap();
-        // let path = bitcoin::util::bip32::DerivationPath::from_str("m/44'/1237'/0'/0/0").unwrap();
-        // let secp = bitcoin::secp256k1::Secp256k1::new();
-        // let child_xprv = root_key.derive_priv(&secp, &path).unwrap();
-        // // let secret_key = Keys::try_from(child_xprv.private_key).unwrap();
-        // let keys = Keys::new(child_xprv.private_key.into());
-        // let pubkey = keys.public_key();
-        let pubkey = User::get_pubkey(&mnemonic);
-
-        User {
+        let mnemonic: Mnemonic = bip39::Mnemonic::from_str(&User::make_mnemonic()?)?;
+        let pubkey = User::get_pubkey(&mnemonic)?;
+        Ok(User {
             config,
             registered: true,
             mnemonic,
             pubkey,
-        }
+        })
     }
 
     fn recover() -> Self {
         todo!()
     }
 
-    fn load_config(mnemonic: Mnemonic, config: PathBuf) -> Self {
-        let pubkey = User::get_pubkey(&mnemonic);
+    fn load_config(mnemonic: Mnemonic, config: PathBuf) -> Result<Self, Box<dyn Error>>
+    where
+        Self: Sized,
+    {
+        let pubkey = User::get_pubkey(&mnemonic)?;
         let config = PathBuf::from(config);
-        User {
+        Ok(User {
             config,
             registered: false,
             mnemonic,
             pubkey,
-        }
+        })
     }
 }
 
@@ -376,7 +308,7 @@ mod tests {
     #[test]
     fn test_add() {
         let user = User::new();
-        assert_eq!(User::make_seed(), "");
+        assert_eq!(User::make_mnemonic().unwrap(), "");
     }
     #[test]
     fn configure() {
