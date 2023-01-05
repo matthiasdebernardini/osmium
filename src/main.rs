@@ -1,7 +1,9 @@
 #![allow(unused)]
 use bip39::serde::__private::de::TagOrContentFieldVisitor;
 use bip39::{self, Language, Mnemonic};
+use bitcoin::secp256k1::SecretKey;
 use bitcoin::util::bip32::ExtendedPrivKey;
+use bitcoin::Network;
 use bitcoin::{secp256k1::Secp256k1, XOnlyPublicKey};
 use chrono::format::format;
 use chrono::offset::Utc;
@@ -27,6 +29,7 @@ use age::secrecy::Secret;
 use age::stream::StreamWriter;
 use clap::Parser;
 use nostr::util::nips::nip19::ToBech32;
+use reqwest::header;
 use rpassword::prompt_password;
 use std::fs::OpenOptions;
 use zeroize::Zeroize;
@@ -76,34 +79,35 @@ fn main() -> Result<(), Box<dyn Error>> {
             let u = User::new()?;
             let app_files = User::get_app_files()?;
             let contents = encrypt(&format!("{:?}", u.pubkey), "")?;
-            User::make_app_files(
-                app_files.app_config,
-                &format!("{contents:?}"),
-            )?;
-            // User::make_app_files(app_files.app_mnemonic, &format!("{:?}", u.mnemonic))?;
-            todo!("initialize new user, then ask for registration")
+            User::make_app_files(app_files.app_config, &format!("{contents:?}"))
+                .map_err(|e| e.into())
+            // todo!("initialize new user, then ask for registration")
+            // let contents = encrypt(&format!("{:?}", u.mnemonic), "")
+
         }
         (_, _) => {
             unreachable!(
                 "clap crate should prevent this arm executing by making the arguments exclusive"
             )
         }
-    };
-    Ok(())
+    }
+    // Ok(())
 }
 
 fn get_new_password(root: ExtendedPrivKey, index: u32) -> Result<ExtendedPrivKey, Box<dyn Error>> {
     let secp = Secp256k1::new();
-    let xprv = bip85::to_xprv(&secp, &root, index).expect("Could not derive ExtendedPrivKey");
-    Ok(xprv)
+    bip85::to_xprv(&secp, &root, index).map_err(|e| format!("{e}").into())
 }
 
 #[derive(Debug)]
 struct User {
     config: PathBuf,
+    // change to LN invoice paid
     registered: bool,
     mnemonic: Mnemonic,
     pubkey: String,
+    //language
+    
 }
 
 impl NewInstance for User {
@@ -137,29 +141,31 @@ impl NewInstance for User {
         let xdg_dirs = BaseDirectories::with_prefix("osmium")?;
         Ok(xdg_dirs.place_config_file("config.toml")?)
     }
-    fn make_mnemonic() -> Result<String, Box<dyn Error>> {
-        Ok(bip39::Mnemonic::generate(12)?.to_string())
+    fn make_mnemonic() -> Result<Mnemonic, Box<dyn Error>> {
+        bip39::Mnemonic::generate(12).map_err(|e| e.into())
     }
     fn register(&self) -> bool {
         todo!()
     }
-    fn get_pubkey(mnemonic: &Mnemonic) -> Result<String, Box<dyn Error>> {
-        let root_key = bitcoin::util::bip32::ExtendedPrivKey::new_master(
-            bitcoin::Network::Bitcoin,
-            &mnemonic.to_entropy_array().0,
-        )?;
-        let path = bitcoin::util::bip32::DerivationPath::from_str("m/44'/1237'/0'/0/0")?;
-        let secp = bitcoin::secp256k1::Secp256k1::new();
-        let child_xprv = root_key.derive_priv(&secp, &path)?;
+    fn get_pubkey(extended_private_key: &ExtendedPrivKey) -> Result<String, Box<dyn Error>> {
+        // let root_key = bitcoin::util::bip32::ExtendedPrivKey::new_master(
+        //     bitcoin::Network::Bitcoin,
+        //     &mnemonic.to_entropy_array().0,
+        // )?;
+        // let path = bitcoin::util::bip32::DerivationPath::from_str("m/44'/1237'/0'/0/0")?;
+        // let secp = bitcoin::secp256k1::Secp256k1::new();
+        // let child_xprv = root_key.derive_priv(&secp, &path)?;
         // let secret_key = Keys::try_from(child_xprv.private_key).unwrap();
-        let keys = Keys::new(child_xprv.private_key.into());
-        let pubkey = keys.public_key().to_bech32()?;
-        Ok(pubkey)
+        let secret_key = SecretKey::from_str(extended_private_key.to_string().as_str())?;
+        let keys = Keys::new(secret_key);
+        keys.public_key().to_bech32().map_err(|e| e.into())
+        // Ok(pubkey)
     }
     fn new() -> Result<Self, Box<dyn Error>> {
         let config = User::configure().expect("can not make config for new user");
-        let mnemonic: Mnemonic = bip39::Mnemonic::from_str(&User::make_mnemonic()?)?;
-        let pubkey = User::get_pubkey(&mnemonic)?;
+        let mnemonic: Mnemonic = User::make_mnemonic()?;
+        let extended_private_key = User::get_extended_private_key(&mnemonic)?;
+        let pubkey = User::get_pubkey(&extended_private_key)?;
         Ok(User {
             config,
             registered: true,
@@ -174,7 +180,8 @@ impl NewInstance for User {
     where
         Self: Sized,
     {
-        let pubkey = User::get_pubkey(&mnemonic)?;
+        let extended_private_key = User::get_extended_private_key(&mnemonic)?;
+        let pubkey = User::get_pubkey(&extended_private_key)?;
         let config = PathBuf::from(config);
         Ok(User {
             config,
@@ -182,6 +189,16 @@ impl NewInstance for User {
             mnemonic,
             pubkey,
         })
+    }
+
+    fn update_passwords_file(path: PathBuf) -> Result<(), Box<dyn Error>> {
+        todo!()
+    }
+
+    fn get_extended_private_key(mnemonic: &Mnemonic) -> Result<ExtendedPrivKey, Box<dyn Error>> {
+        let passphrase = get_passphrase()?;
+        ExtendedPrivKey::new_master(Network::Testnet, &mnemonic.to_seed(passphrase))
+            .map_err(|e| e.into())
     }
 }
 
@@ -193,9 +210,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_add() {
+    fn test_mnemonic() {
         let user = User::new();
-        assert_eq!(User::make_mnemonic().unwrap(), "");
+        panic!()
     }
     #[test]
     fn configure() {
@@ -204,6 +221,7 @@ mod tests {
         panic!()
     }
 }
+
 fn get_passphrase() -> Result<String, Box<dyn Error>> {
     let mut needs_double_checking = true;
     let mut passphrase = String::new();
@@ -223,6 +241,7 @@ fn get_passphrase() -> Result<String, Box<dyn Error>> {
     println!("NOBODY CAN HELP IF YOU LOSE IT - THAT'S WHY IT WORKS IN THE FIRST PLACE");
     Ok(passphrase)
 }
+
 fn encrypt(buf: &str, path: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     let text = "aa";
     let mut buffer = File::create(path)?;
@@ -238,11 +257,13 @@ fn encrypt(buf: &str, path: &str) -> Result<Vec<u8>, Box<dyn Error>> {
 
     Ok(buf.as_bytes().to_vec())
 }
+
 fn decrypt_file(path: PathBuf) -> Result<(), Box<dyn Error>> {
     todo!()
 }
-fn init_log() -> Result<(), Box<dyn Error>> {
-    Ok(Dispatch::new()
+
+fn init_log() -> Result<(), SetLoggerError> {
+    Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
                 "{}[{}][{}] {}",
@@ -255,8 +276,9 @@ fn init_log() -> Result<(), Box<dyn Error>> {
         .level(LevelFilter::Debug)
         .chain(io::stderr())
         // .chain(log_file(format!("osmium_{}.log", Utc::now().timestamp()))?)
-        .apply()?)
+        .apply()
 }
+
 fn handle_user(s: Option<String>, decryption_password: String) -> Result<(), Box<dyn Error>> {
     let app_files = User::get_app_files()?;
 
@@ -312,8 +334,8 @@ trait NewInstance {
     /// This function will return an error if .
     fn configure() -> Result<PathBuf, Box<dyn Error>>;
     fn recover() -> Self;
-    fn get_pubkey(mnemonic: &Mnemonic) -> Result<String, Box<dyn Error>>;
-    fn make_mnemonic() -> Result<String, Box<dyn Error>>;
+    fn get_pubkey(extended_private_key: &ExtendedPrivKey) -> Result<String, Box<dyn Error>>;
+    fn make_mnemonic() -> Result<Mnemonic, Box<dyn Error>>;
     fn new() -> Result<Self, Box<dyn Error>>
     where
         Self: Sized;
@@ -323,4 +345,33 @@ trait NewInstance {
         Self: Sized;
     fn get_app_files() -> Result<AppFiles, Box<dyn Error>>;
     fn make_app_files(path: PathBuf, contents: &str) -> Result<(), std::io::Error>;
+    fn update_passwords_file(path: PathBuf) -> Result<(), Box<dyn Error>>;
+    fn get_extended_private_key(mnemonic: &Mnemonic) -> Result<ExtendedPrivKey, Box<dyn Error>>;
+}
+
+fn request() -> Result<(), Box<dyn std::error::Error>> {
+    let mut headers = header::HeaderMap::new();
+    headers.insert("Content-Type", "application/json".parse().unwrap());
+
+    let client = reqwest::blocking::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap();
+    let res = client.post("http://localhost:3000/4deb433c53cf800d0ba1501e416569902ac41d04f5587b2aed8e34ed35ebc512")
+        .headers(headers)
+        .body(r#"
+{
+  "Id": 12345,
+  "Customer": "John Smith",
+  "Quantity": 1,
+  "Price": 10.00
+}
+
+"#
+        )
+        .send()?
+        .text()?;
+    println!("{}", res);
+
+    Ok(())
 }
