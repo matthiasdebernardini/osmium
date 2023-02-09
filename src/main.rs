@@ -285,12 +285,9 @@ mod tests {
     // use core::panicking::panic;
     // use anyhow::Ok;
     use anyhow::anyhow;
-    // use bitcoin::secp256k1::PublicKey;
+    use bip85::bitcoin::secp256k1::{Error as SecpError, PublicKey, SecretKey};
     use carbonado::utils::bech32_decode;
     use rand::thread_rng;
-    use secp256k1::Error as SecpError;
-    use secp256k1::PublicKey;
-    use secp256k1::SecretKey;
     use std::result::Result::Ok;
     // Note this useful idiom: importing names from outer (for mod tests) scope.
     use super::*;
@@ -309,25 +306,37 @@ mod tests {
 
         println!("{}", new_password);
     }
-    // #[test]
-    // fn test_carbonado() {
-    //     let input = "hello".as_bytes();
-    //     let user = User::new().unwrap();
-    //
-    //     let a = bech32_decode(&user.pubkey).unwrap().1;
-    //     let pk = XOnlyPublicKey::from_slice(&a).unwrap();
-    //
-    //     let sk = SecretKey::random(&mut thread_rng());
-    //     let pk = PublicKey::from_secret_key(&sk);
-    //     let (encoded, hash, encode_info) = match encode(&pk.serialize(), input, 15) {
-    //         Ok(a) => (a),
-    //         Err(e) => panic!("Could not encode due to {}", e),
-    //     };
-    //
-    //     println!("encoded: {:?}", encoded);
-    //     println!("hash: {:?}", hash);
-    //     println!("encode_info: {:?}", encode_info);
-    // }
+    #[test]
+    fn test_carbonado() -> anyhow::Result<()> {
+        let input = "hello".as_bytes();
+        let user = User::new()?;
+
+        let a = bech32_decode(&user.pubkey)?.1;
+        let pk = XOnlyPublicKey::from_slice(&a)?;
+
+        let sk = SecretKey::new(&mut thread_rng());
+        let secp = Secp256k1::new();
+        let pk = PublicKey::from_secret_key(&secp, &sk);
+        let format = 15;
+        let (encoded, hash, encode_info) = match encode(&pk.serialize(), input, format) {
+            Ok(a) => (a),
+            Err(e) => panic!("Could not encode due to {e}"),
+        };
+        let header = carbonado::fs::Header::new(
+            &sk.secret_bytes(),
+            hash.as_bytes(),
+            format.into(),
+            0,
+            encode_info.bytes_verifiable,
+            encode_info.padding_len,
+        )?;
+
+        println!("encoded len: {:?}", encoded.len()); // to see actual bytes, save to file and use hexyl
+        println!("hash: {hash:?}");
+        println!("encode_info: {encode_info:?}");
+        println!("file name: {:?}", header.filename());
+        Ok(())
+    }
 }
 
 //TODO: implement real mocking
